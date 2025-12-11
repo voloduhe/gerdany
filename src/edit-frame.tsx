@@ -6,7 +6,6 @@ const BASE_CELL_SIZE = 40;
 
 const X_SCALE_FACTOR = 0.5;
 
-// Определяем ключ, по которому данные будут храниться в Local Storage
 const LOCAL_STORAGE_KEY = "infiniteCanvasPaintedCells";
 
 type PaintedCells = Record<string, string>;
@@ -19,19 +18,17 @@ interface PanOffset {
 export function InfiniteCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoomLevel, setZoomLevel] = useState(1.0);
+  const [isPainting, setIsPainting] = useState(false); // 1. НОВОЕ СОСТОЯНИЕ ДЛЯ СТИРАНИЯ
+  const [isErasing, setIsErasing] = useState(false);
 
-  // 1. ЗАГРУЗКА ИЗ LOCAL STORAGE
-  // Используем функцию-инициализатор в useState, чтобы загрузить сохраненные данные
   const [paintedCells, setPaintedCells] = useState<PaintedCells>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
-        // Парсим строку JSON обратно в объект
         return JSON.parse(saved) as PaintedCells;
       }
     } catch (error) {
       console.error("Ошибка при загрузке из Local Storage:", error);
-      // Если Local Storage недоступен или данные повреждены, возвращаем пустой объект
     }
     return {};
   });
@@ -40,6 +37,111 @@ export function InfiniteCanvas() {
   const [color, setColor] = useState("#ffffff");
 
   const getCellKey = (col: number, row: number) => `${col},${row}`;
+
+  const handleClear = useCallback(() => {
+    setPaintedCells({});
+  }, []);
+
+  const getCellCoordinates = useCallback(
+    (clientX: number, clientY: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+
+      const rect = canvas.getBoundingClientRect();
+      const cellClickX = clientX - rect.left;
+      const cellClickY = clientY - rect.top;
+
+      const CELL_HEIGHT = BASE_CELL_SIZE * zoomLevel;
+      const CELL_WIDTH = CELL_HEIGHT * X_SCALE_FACTOR;
+      const offset = CELL_HEIGHT / 2;
+
+      const clickX = cellClickX - panOffset.x;
+      const clickY = cellClickY - panOffset.y;
+
+      const col = Math.floor(clickX / CELL_WIDTH);
+
+      const isEvenCol = col % 2 === 0;
+      const yOffset = isEvenCol ? offset : 0;
+
+      const adjustedY = clickY - yOffset;
+
+      const row = Math.floor(adjustedY / CELL_HEIGHT);
+      return getCellKey(col, row);
+    },
+    [zoomLevel, panOffset],
+  );
+
+  const paintCell = useCallback(
+    (key: string) => {
+      const normalizedColor = color.toLowerCase();
+
+      setPaintedCells((prevCells) => {
+        if (normalizedColor === "#ffffff") {
+          const { [key]: deleted, ...cellsWithoutKey } = prevCells;
+          console.log(deleted);
+          return cellsWithoutKey;
+        } else {
+          return { ...prevCells, [key]: normalizedColor };
+        }
+      });
+    },
+    [color],
+  );
+
+  const eraseCell = useCallback((key: string) => {
+    setPaintedCells((prevCells) => {
+      if (prevCells[key]) {
+        const { [key]: deleted, ...cellsWithoutKey } = prevCells;
+        console.log(deleted);
+        return cellsWithoutKey;
+      }
+      return prevCells;
+    });
+  }, []);
+
+  const handleMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      event.preventDefault();
+
+      const cellKey = getCellCoordinates(event.clientX, event.clientY);
+      if (!cellKey) return;
+
+      if (event.button === 0) {
+        setIsPainting(true);
+        paintCell(cellKey);
+      } else if (event.button === 2) {
+        setIsErasing(true);
+        eraseCell(cellKey);
+      }
+    },
+    [getCellCoordinates, paintCell, eraseCell],
+  );
+
+  const handleMouseMove = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      const cellKey = getCellCoordinates(event.clientX, event.clientY);
+      if (!cellKey) return;
+
+      if (isPainting) {
+        paintCell(cellKey);
+      } else if (isErasing) {
+        eraseCell(cellKey);
+      }
+    },
+    [isPainting, isErasing, getCellCoordinates, paintCell, eraseCell],
+  );
+
+  const handleMouseUp = useCallback(() => {
+    setIsPainting(false);
+    setIsErasing(false);
+  }, []);
+
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      event.preventDefault();
+    },
+    [],
+  );
 
   const drawGrid = useCallback(
     (
@@ -124,44 +226,11 @@ export function InfiniteCanvas() {
     }
   }, [paintedCells]);
 
-  const handleCanvasClick = useCallback(
-    (event: React.MouseEvent<HTMLCanvasElement>) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const clientX = event.clientX - rect.left;
-      const clientY = event.clientY - rect.top;
-
-      const CELL_HEIGHT = BASE_CELL_SIZE * zoomLevel;
-      const CELL_WIDTH = CELL_HEIGHT * X_SCALE_FACTOR;
-      const offset = CELL_HEIGHT / 2;
-
-      const clickX = clientX - panOffset.x;
-      const clickY = clientY - panOffset.y;
-
-      const col = Math.floor(clickX / CELL_WIDTH);
-
-      const isEvenCol = col % 2 === 0;
-      const yOffset = isEvenCol ? offset : 0;
-
-      const adjustedY = clickY - yOffset;
-
-      const row = Math.floor(adjustedY / CELL_HEIGHT);
-
-      const key = getCellKey(col, row);
-
-      setPaintedCells((prevCells) => {
-        const newCells = { ...prevCells };
-        if (newCells[key]) {
-          delete newCells[key];
-        } else {
-          newCells[key] = color;
-        }
-        return newCells;
-      });
+  const handleDragStart = useCallback(
+    (event: React.DragEvent<HTMLCanvasElement>) => {
+      event.preventDefault();
     },
-    [zoomLevel, panOffset, color],
+    [],
   );
 
   useEffect(() => {
@@ -192,10 +261,12 @@ export function InfiniteCanvas() {
     };
 
     canvas.addEventListener("wheel", handleWheel);
+    window.addEventListener("mouseup", handleMouseUp);
     return () => {
       canvas.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [zoomLevel]);
+  }, [zoomLevel, handleMouseUp]);
 
   return (
     <>
@@ -203,15 +274,39 @@ export function InfiniteCanvas() {
         ref={canvasRef}
         width={W}
         height={H}
-        style={{ display: "block", background: "#ffffff" }}
-        onClick={handleCanvasClick}
+        style={{
+          display: "block",
+          background: "#ffffff",
+          userSelect: "none",
+          touchAction: "none",
+          cursor: isPainting
+            ? `url('/brush.svg'), auto`
+            : isErasing
+              ? "crosshair"
+              : "default",
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onDragStart={handleDragStart}
+        onContextMenu={handleContextMenu}
       />
-      <input
-        className="absolute top-5 left-5"
-        type="color"
-        value={color}
-        onChange={(e) => setColor(e.target.value)}
-      ></input>
+      <div className="absolute top-5 left-5 flex space-x-3 p-3 border border-black/10 backdrop-blur-[2px] bg-black/10 rounded-2xl shadow-[0_0_16px_rgba(0,0,0,0.1)] justify-center items-center">
+        <div className="flex items-start flex-col">
+          <p className="text-[12px] ml-[3px] translate-y-0.5">цвет</p>
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            className="border-black/10 rounded-2xl cursor-pointer"
+          />
+        </div>
+        <button
+          className="p-2 cursor-pointer rounded-2xl shadow-[0_0_6px_rgba(0,0,0,0.1)] font-bold border border-white/40 size-9"
+          onClick={handleClear}
+        >
+          <img src="/clean.svg" className="size-full" />
+        </button>
+      </div>
     </>
   );
 }
