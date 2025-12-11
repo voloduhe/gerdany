@@ -18,7 +18,7 @@ interface PanOffset {
 export function InfiniteCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoomLevel, setZoomLevel] = useState(1.0);
-  const [isPainting, setIsPainting] = useState(false); // 1. НОВОЕ СОСТОЯНИЕ ДЛЯ СТИРАНИЯ
+  const [isPainting, setIsPainting] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
 
   const [paintedCells, setPaintedCells] = useState<PaintedCells>(() => {
