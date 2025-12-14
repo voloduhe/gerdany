@@ -21,6 +21,8 @@ export function InfiniteCanvas() {
   const [isPainting, setIsPainting] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
 
+  const [rangeValue, setRangeValue] = useState(1);
+
   const [paintedCells, setPaintedCells] = useState<PaintedCells>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -41,6 +43,46 @@ export function InfiniteCanvas() {
   const handleClear = useCallback(() => {
     setPaintedCells({});
   }, []);
+
+  const loadPointsFromJson = useCallback(
+    async (jsonUrl: string) => {
+      try {
+        const response = await fetch(jsonUrl);
+
+        if (!response.ok) {
+          throw new Error(`${response.status}`);
+        }
+
+        const initialPoints: PaintedCells =
+          (await response.json()) as PaintedCells;
+        let allPoints: PaintedCells = { ...initialPoints };
+
+        const NUM_COPIES = rangeValue;
+        const SHIFT_AMOUNT = 4;
+
+        for (let i = 0; i < NUM_COPIES; i++) {
+          const totalShift = SHIFT_AMOUNT * (i + 1);
+          const shiftedPoints: PaintedCells = {};
+
+          for (const key in initialPoints) {
+            if (Object.prototype.hasOwnProperty.call(initialPoints, key)) {
+              const [xStr, yStr] = key.split(",");
+              const x = Number(xStr);
+              const y = Number(yStr);
+              const newKey = `${x + totalShift},${y}`;
+              shiftedPoints[newKey] = initialPoints[key];
+            }
+          }
+
+          allPoints = { ...allPoints, ...shiftedPoints };
+        }
+        setPaintedCells(allPoints);
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    [rangeValue],
+  );
 
   const getCellCoordinates = useCallback(
     (clientX: number, clientY: number) => {
@@ -268,6 +310,8 @@ export function InfiniteCanvas() {
     };
   }, [zoomLevel, handleMouseUp]);
 
+  const SCHEME_1_URL = "/patterns/scheme1.json";
+
   return (
     <>
       <canvas
@@ -306,6 +350,19 @@ export function InfiniteCanvas() {
         >
           <img src="/clean.svg" className="size-full" />
         </button>
+        <button
+          className="p-2 px-4 cursor-pointer rounded-2xl shadow-[0_0_6px_rgba(0,0,0,0.1)] border border-white/40 text-black"
+          onClick={() => loadPointsFromJson(SCHEME_1_URL)}
+        >
+          Нарисовать точки
+        </button>
+        <input
+          type="range"
+          value={rangeValue}
+          onChange={(value) => setRangeValue(Number(value.currentTarget.value))}
+          min={1}
+        />
+        <p>{rangeValue}</p>
       </div>
     </>
   );
