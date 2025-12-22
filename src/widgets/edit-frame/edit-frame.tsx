@@ -451,7 +451,7 @@ export function InfiniteCanvas() {
                     }
                   }}
                   key={uColor}
-                  className="flex flex-col items-center bg-white/10 p-1 rounded-lg border border-white/20"
+                  className="flex flex-col items-center bg-white/10 p-1 rounded-lg border border-white/20 w-11"
                 >
                   <input
                     type="color"
