@@ -1,25 +1,74 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import {
+  useRef,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  type ChangeEvent,
+} from "react";
 
-const W = window.innerWidth;
-const H = window.innerHeight;
+const W = window.innerWidth - 1;
+const H = window.innerHeight - 1;
 const BASE_CELL_SIZE = 40;
 
 const X_SCALE_FACTOR = 0.5;
 
 const LOCAL_STORAGE_KEY = "infiniteCanvasPaintedCells";
+const COLOR_STORAGE_KEY = "infiniteCanvasBrushColor";
+const BG_COLOR_STORAGE_KEY = "infiniteCanvasBgColor";
 
 type PaintedCells = Record<string, string>;
+type ColorMap = Record<string, string>;
 
 interface PanOffset {
   x: number;
   y: number;
 }
 
+const DEFAULT_EMPTY_COLOR = "#bfbfbf";
+
+const ColorTextInput = ({
+  initialValue,
+  onConfirm,
+}: {
+  initialValue: string;
+  onConfirm: (val: string) => void;
+}) => {
+  const [localVal, setLocalVal] = useState(initialValue);
+
+  useEffect(() => {
+    setLocalVal(initialValue);
+  }, [initialValue]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      onConfirm(localVal);
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      value={localVal}
+      onChange={(e) => setLocalVal(e.target.value)}
+      onKeyDown={handleKeyDown}
+      className="text-[9px] mt-1 font-mono uppercase bg-transparent border-none text-center focus:outline-none focus:bg-white/20 rounded w-20 text-white"
+      placeholder="Название"
+    />
+  );
+};
+
 export function InfiniteCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isPainting, setIsPainting] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const lastMousePos = useRef({ x: 0, y: 0 });
+  const [bgColor, setBgColor] = useState(() => {
+    return localStorage.getItem(BG_COLOR_STORAGE_KEY) || "#1a1a1a";
+  });
 
   const [rangeValue, setRangeValue] = useState(1);
 
@@ -36,12 +85,48 @@ export function InfiniteCanvas() {
   });
 
   const [panOffset, setPanOffset] = useState<PanOffset>({ x: 0, y: 0 });
-  const [color, setColor] = useState("#ffffff");
+  const [color, setColor] = useState(() => {
+    return localStorage.getItem(COLOR_STORAGE_KEY) || "#ff0000";
+  });
+
+  const uniqueColors = useMemo(() => {
+    return Array.from(new Set(Object.values(paintedCells)));
+  }, [paintedCells]);
+
+  const [colorMap, setColorMap] = useState<ColorMap>({});
+
+  useEffect(() => {
+    localStorage.setItem(COLOR_STORAGE_KEY, color);
+  }, [color]);
+
+  useEffect(() => {
+    localStorage.setItem(BG_COLOR_STORAGE_KEY, bgColor);
+  }, [bgColor]);
+
+  useEffect(() => {
+    setColorMap((prev) => {
+      const next = { ...prev };
+      uniqueColors.forEach((c) => {
+        if (!next[c]) next[c] = c;
+      });
+      return next;
+    });
+  }, [uniqueColors]);
+
+  const updateColor = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value === "#ffffff") {
+      setColor("#fcfcfc");
+    } else {
+      setColor(e.target.value);
+    }
+  };
 
   const getCellKey = (col: number, row: number) => `${col},${row}`;
 
   const handleClear = useCallback(() => {
+    return;
     setPaintedCells({});
+    setColorMap({});
   }, []);
 
   const loadPointsFromJson = useCallback(
@@ -118,9 +203,12 @@ export function InfiniteCanvas() {
       const normalizedColor = color.toLowerCase();
 
       setPaintedCells((prevCells) => {
+        if (!prevCells[key]) {
+          return prevCells;
+        }
+
         if (normalizedColor === "#ffffff") {
           const { [key]: deleted, ...cellsWithoutKey } = prevCells;
-          console.log(deleted);
           return cellsWithoutKey;
         } else {
           return { ...prevCells, [key]: normalizedColor };
@@ -133,9 +221,7 @@ export function InfiniteCanvas() {
   const eraseCell = useCallback((key: string) => {
     setPaintedCells((prevCells) => {
       if (prevCells[key]) {
-        const { [key]: deleted, ...cellsWithoutKey } = prevCells;
-        console.log(deleted);
-        return cellsWithoutKey;
+        return { ...prevCells, [key]: DEFAULT_EMPTY_COLOR };
       }
       return prevCells;
     });
@@ -144,6 +230,12 @@ export function InfiniteCanvas() {
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       event.preventDefault();
+
+      if (event.button === 1) {
+        setIsPanning(true);
+        lastMousePos.current = { x: event.clientX, y: event.clientY };
+        return;
+      }
 
       const cellKey = getCellCoordinates(event.clientX, event.clientY);
       if (!cellKey) return;
@@ -161,6 +253,14 @@ export function InfiniteCanvas() {
 
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (isPanning) {
+        const dx = event.clientX - lastMousePos.current.x;
+        const dy = event.clientY - lastMousePos.current.y;
+        setPanOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+        lastMousePos.current = { x: event.clientX, y: event.clientY };
+        return;
+      }
+
       const cellKey = getCellCoordinates(event.clientX, event.clientY);
       if (!cellKey) return;
 
@@ -170,12 +270,20 @@ export function InfiniteCanvas() {
         eraseCell(cellKey);
       }
     },
-    [isPainting, isErasing, getCellCoordinates, paintCell, eraseCell],
+    [
+      isPainting,
+      isErasing,
+      isPanning,
+      getCellCoordinates,
+      paintCell,
+      eraseCell,
+    ],
   );
 
   const handleMouseUp = useCallback(() => {
     setIsPainting(false);
     setIsErasing(false);
+    setIsPanning(false);
   }, []);
 
   const handleContextMenu = useCallback(
@@ -191,59 +299,39 @@ export function InfiniteCanvas() {
       currentZoom: number,
       cells: PaintedCells,
       currentOffset: PanOffset,
+      currentMap: ColorMap,
     ) => {
       ctx.clearRect(0, 0, W, H);
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1;
-      ctx.lineCap = "square";
-
       ctx.save();
       ctx.translate(currentOffset.x, currentOffset.y);
 
       const CELL_HEIGHT = BASE_CELL_SIZE * currentZoom;
       const CELL_WIDTH = CELL_HEIGHT * X_SCALE_FACTOR;
       const offset = CELL_HEIGHT / 2;
-
       const radius = CELL_HEIGHT * 0.3;
-
       const drawStroke = currentZoom > 0.4;
 
-      const startCol = Math.floor(-currentOffset.x / CELL_WIDTH);
-      const startRow = Math.floor(-currentOffset.y / CELL_HEIGHT);
-
-      const endCol = Math.ceil((W - currentOffset.x) / CELL_WIDTH) + 1;
-      const endRow = Math.ceil((H - currentOffset.y) / CELL_HEIGHT) + 1;
-
-      for (let col = startCol; col <= endCol; col++) {
+      for (const key in cells) {
+        const [col, row] = key.split(",").map(Number);
         const x = col * CELL_WIDTH;
+        const yOffset = col % 2 === 0 ? offset : 0;
+        const y = row * CELL_HEIGHT + yOffset;
 
-        const isEvenCol = col % 2 === 0;
-        const yOffset = isEvenCol ? offset : 0;
+        const centerX = x + CELL_WIDTH / 2;
+        const centerY = y + CELL_HEIGHT / 2;
 
-        for (let row = startRow; row <= endRow; row++) {
-          const y = row * CELL_HEIGHT;
+        const cellColor = cells[key];
 
-          const centerX = x + CELL_WIDTH / 2;
-          const centerY = y + yOffset + CELL_HEIGHT / 2;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
 
-          const key = getCellKey(col, row);
-          const cellColor = cells[key];
+        ctx.fillStyle = currentMap[cellColor] || cellColor;
+        ctx.fill();
 
-          ctx.beginPath();
-          ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-
-          if (cellColor) {
-            ctx.fillStyle = cellColor;
-          } else {
-            ctx.fillStyle = "white";
-          }
-          ctx.fill();
-
-          if (drawStroke) {
-            ctx.strokeStyle = "rgba(0, 0, 0, 0.1)";
-            ctx.lineWidth = 1;
-            ctx.stroke();
-          }
+        if (drawStroke) {
+          ctx.strokeStyle = "rgba(0, 0, 0, 0.1)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
         }
       }
       ctx.restore();
@@ -256,9 +344,8 @@ export function InfiniteCanvas() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
-    drawGrid(ctx, zoomLevel, paintedCells, panOffset);
-  }, [zoomLevel, paintedCells, panOffset, drawGrid]);
+    drawGrid(ctx, zoomLevel, paintedCells, panOffset, colorMap);
+  }, [zoomLevel, paintedCells, panOffset, drawGrid, colorMap]);
 
   useEffect(() => {
     try {
@@ -268,13 +355,6 @@ export function InfiniteCanvas() {
     }
   }, [paintedCells]);
 
-  const handleDragStart = useCallback(
-    (event: React.DragEvent<HTMLCanvasElement>) => {
-      event.preventDefault();
-    },
-    [],
-  );
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -282,23 +362,22 @@ export function InfiniteCanvas() {
 
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
-
       const oldZoom = zoomLevel;
       const mouseX = event.clientX - rect.left;
       const mouseY = event.clientY - rect.top;
 
       const scaleFactor = 0.1;
       const direction = event.deltaY < 0 ? 1 : -1;
-      let newZoom = oldZoom + direction * scaleFactor;
-      newZoom = Math.max(0.1, Math.min(newZoom, 5.0));
-
+      const newZoom = Math.max(
+        0.1,
+        Math.min(oldZoom + direction * scaleFactor, 5.0),
+      );
       const ratio = newZoom / oldZoom;
 
-      setPanOffset((prevOffset) => ({
-        x: mouseX - (mouseX - prevOffset.x) * ratio,
-        y: mouseY - (mouseY - prevOffset.y) * ratio,
+      setPanOffset((prev) => ({
+        x: mouseX - (mouseX - prev.x) * ratio,
+        y: mouseY - (mouseY - prev.y) * ratio,
       }));
-
       setZoomLevel(newZoom);
     };
 
@@ -320,49 +399,110 @@ export function InfiniteCanvas() {
         height={H}
         style={{
           display: "block",
-          background: "#ffffff",
+          background: bgColor,
           userSelect: "none",
           touchAction: "none",
-          cursor: isPainting
-            ? `url('/brush.svg'), auto`
-            : isErasing
-              ? "crosshair"
-              : "default",
+          cursor: isPanning ? "grabbing" : isPainting ? "crosshair" : "default",
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
-        onDragStart={handleDragStart}
+        onMouseUp={handleMouseUp}
         onContextMenu={handleContextMenu}
       />
-      <div className="absolute top-5 left-5 flex space-x-3 p-3 border border-black/10 backdrop-blur-[2px] bg-black/10 rounded-2xl shadow-[0_0_16px_rgba(0,0,0,0.1)] justify-center items-center">
+      <div className="absolute top-5 left-5 flex flex-col space-y-3 p-3 border border-black/10 backdrop-blur-[2px] bg-white/10 rounded-2xl shadow-[0_0_16px_rgba(0,0,0,0.1)] text-white">
+        <div className="flex space-x-3 items-center">
+          <div className="flex items-start flex-col">
+            <p className="text-[10px] ml-[3px] opacity-60">кисть</p>
+            <input
+              type="color"
+              value={color}
+              onChange={updateColor}
+              className="border-white/10 rounded-lg cursor-pointer size-8"
+            />
+          </div>
+          <button
+            className="p-2 cursor-pointer rounded-xl shadow-[0_0_6px_rgba(0,0,0,0.1)] font-bold border border-white/40 size-9 bg-white/20"
+            onClick={handleClear}
+          >
+            <img src="/clean.svg" className="size-full" alt="clear" />
+          </button>
+          <button
+            className="p-2 px-4 cursor-pointer rounded-xl shadow-[0_0_6px_rgba(0,0,0,0.1)] border border-white/40 text-white text-sm bg-white/20"
+            onClick={() => {
+              const confirmLoad = window.confirm(
+                "Это перерисует все и удалит все что было нарисовано",
+              );
+
+              if (confirmLoad) {
+                loadPointsFromJson(SCHEME_1_URL);
+              }
+            }}
+          >
+            Загрузить точки
+          </button>
+          <div className="flex flex-col">
+            <p className="text-[10px] opacity-60">копии: {rangeValue}</p>
+            <input
+              type="range"
+              value={rangeValue}
+              onChange={(e) => setRangeValue(Number(e.target.value))}
+              min={0}
+              max={40}
+            />
+          </div>
+        </div>
+        {uniqueColors.length > 0 && (
+          <div className="flex flex-col border-t border-black/5 pt-2">
+            <p className="text-[10px] font-bold opacity-60 mb-2 uppercase tracking-wider">
+              Цвета в проекте:
+            </p>
+            <div className="flex flex-wrap gap-2 max-w-[300px]">
+              {uniqueColors.map((uColor) => (
+                <div
+                  onMouseUp={() => {
+                    if ((colorMap[uColor] || uColor) === "#ffffff") {
+                      setColor("#fcfcfc");
+                    } else {
+                      setColor(colorMap[uColor] || uColor);
+                    }
+                  }}
+                  key={uColor}
+                  className="flex flex-col items-center bg-white/10 p-1 rounded-lg border border-white/20"
+                >
+                  <input
+                    type="color"
+                    value={colorMap[uColor] || uColor}
+                    onChange={(e) =>
+                      setColorMap((prev) => ({
+                        ...prev,
+                        [uColor]: e.target.value,
+                      }))
+                    }
+                    className="size-6 cursor-pointer rounded-md border-none"
+                  />
+                  <ColorTextInput
+                    initialValue={colorMap[uColor] || uColor}
+                    onConfirm={(newColor) => {
+                      setColorMap((prev) => ({
+                        ...prev,
+                        [uColor]: newColor,
+                      }));
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex items-start flex-col">
-          <p className="text-[12px] ml-[3px] translate-y-0.5">цвет</p>
+          <p className="text-[10px] ml-[3px] opacity-60">фон</p>
           <input
             type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            className="border-black/10 rounded-2xl cursor-pointer"
+            value={bgColor}
+            onChange={(e) => setBgColor(e.target.value)}
+            className="border-white/10 rounded-lg cursor-pointer size-8"
           />
         </div>
-        <button
-          className="p-2 cursor-pointer rounded-2xl shadow-[0_0_6px_rgba(0,0,0,0.1)] font-bold border border-white/40 size-9"
-          onClick={handleClear}
-        >
-          <img src="/clean.svg" className="size-full" />
-        </button>
-        <button
-          className="p-2 px-4 cursor-pointer rounded-2xl shadow-[0_0_6px_rgba(0,0,0,0.1)] border border-white/40 text-black"
-          onClick={() => loadPointsFromJson(SCHEME_1_URL)}
-        >
-          Нарисовать точки
-        </button>
-        <input
-          type="range"
-          value={rangeValue}
-          onChange={(value) => setRangeValue(Number(value.currentTarget.value))}
-          min={1}
-        />
-        <p>{rangeValue}</p>
       </div>
     </>
   );
