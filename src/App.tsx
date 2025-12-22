@@ -1,4 +1,4 @@
-import { InfiniteCanvas } from "./edit-frame";
+import { InfiniteCanvas } from "./widgets/edit-frame/edit-frame";
 
 function App() {
   return <InfiniteCanvas />;

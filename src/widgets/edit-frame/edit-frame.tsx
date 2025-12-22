@@ -6,6 +6,9 @@ import {
   useMemo,
   type ChangeEvent,
 } from "react";
+import type { ColorMap, PaintedCells, PanOffset } from "../../shared/types";
+import { SchemePreview } from "../../entities/scheme-preview";
+import { ColorTextInput } from "../../entities/color-text-input";
 
 const W = window.innerWidth - 1;
 const H = window.innerHeight - 1;
@@ -17,47 +20,7 @@ const LOCAL_STORAGE_KEY = "infiniteCanvasPaintedCells";
 const COLOR_STORAGE_KEY = "infiniteCanvasBrushColor";
 const BG_COLOR_STORAGE_KEY = "infiniteCanvasBgColor";
 
-type PaintedCells = Record<string, string>;
-type ColorMap = Record<string, string>;
-
-interface PanOffset {
-  x: number;
-  y: number;
-}
-
 const DEFAULT_EMPTY_COLOR = "#bfbfbf";
-
-const ColorTextInput = ({
-  initialValue,
-  onConfirm,
-}: {
-  initialValue: string;
-  onConfirm: (val: string) => void;
-}) => {
-  const [localVal, setLocalVal] = useState(initialValue);
-
-  useEffect(() => {
-    setLocalVal(initialValue);
-  }, [initialValue]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      onConfirm(localVal);
-      (e.target as HTMLInputElement).blur();
-    }
-  };
-
-  return (
-    <input
-      type="text"
-      value={localVal}
-      onChange={(e) => setLocalVal(e.target.value)}
-      onKeyDown={handleKeyDown}
-      className="text-[9px] mt-1 font-mono uppercase bg-transparent border-none text-center focus:outline-none focus:bg-white/20 rounded w-20 text-white"
-      placeholder="Название"
-    />
-  );
-};
 
 export function InfiniteCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -122,12 +85,6 @@ export function InfiniteCanvas() {
   };
 
   const getCellKey = (col: number, row: number) => `${col},${row}`;
-
-  const handleClear = useCallback(() => {
-    return;
-    setPaintedCells({});
-    setColorMap({});
-  }, []);
 
   const loadPointsFromJson = useCallback(
     async (jsonUrl: string) => {
@@ -209,6 +166,7 @@ export function InfiniteCanvas() {
 
         if (normalizedColor === "#ffffff") {
           const { [key]: deleted, ...cellsWithoutKey } = prevCells;
+          window.console.log(deleted);
           return cellsWithoutKey;
         } else {
           return { ...prevCells, [key]: normalizedColor };
@@ -389,7 +347,18 @@ export function InfiniteCanvas() {
     };
   }, [zoomLevel, handleMouseUp]);
 
-  const SCHEME_1_URL = "/patterns/scheme1.json";
+  const SCHEMES = [
+    { id: "scheme1", name: "Схема 1", url: "/patterns/scheme1.json" },
+    { id: "scheme2", name: "Схема 2", url: "/patterns/scheme1.json" },
+    { id: "scheme3", name: "Схема 3", url: "/patterns/scheme1.json" },
+    { id: "scheme4", name: "Схема 4", url: "/patterns/scheme1.json" },
+    { id: "scheme5", name: "Схема 5", url: "/patterns/scheme1.json" },
+    { id: "scheme63", name: "Схема 6", url: "/patterns/scheme1.json" },
+    { id: "scheme32", name: "Схема 3", url: "/patterns/scheme1.json" },
+    { id: "scheme45", name: "Схема 4", url: "/patterns/scheme1.json" },
+    { id: "scheme56", name: "Схема 5", url: "/patterns/scheme1.json" },
+    { id: "scheme67", name: "Схема 6", url: "/patterns/scheme1.json" },
+  ];
 
   return (
     <>
@@ -409,6 +378,41 @@ export function InfiniteCanvas() {
         onMouseUp={handleMouseUp}
         onContextMenu={handleContextMenu}
       />
+      <div className="absolute top-5 right-5 flex flex-col w-56 border border-black/10 backdrop-blur-[2px] bg-white/10 rounded-2xl shadow-[0_0_16px_rgba(0,0,0,0.1)] text-white overflow-hidden">
+        <div className="p-3 border-b border-white/10 bg-white/5">
+          <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest">
+            Доступные схемы
+          </p>
+        </div>
+        {/*схемы*/}
+        <div
+          className="flex flex-col overflow-y-auto max-h-[200px] p-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-neutral-700 [&::-webkit-scrollbar-thumb]:bg-neutral-500
+          "
+        >
+          {SCHEMES.map((scheme) => (
+            <button
+              key={scheme.id}
+              className="flex items-center justify-between p-3 mb-1 text-left transition-all rounded-xl hover:bg-white/20 active:scale-[0.98] group border border-transparent hover:border-white/10"
+              onClick={() => {
+                const confirmLoad = window.confirm(
+                  `Загрузить "${scheme.name}"? Текущий рисунок будет удален.`,
+                );
+                if (confirmLoad) {
+                  loadPointsFromJson(scheme.url);
+                }
+              }}
+            >
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">{scheme.name}</span>
+                <span className="text-[9px] opacity-40 font-mono italic">
+                  .json
+                </span>
+              </div>
+              <SchemePreview url={scheme.url} />
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="absolute top-5 left-5 flex flex-col space-y-3 p-3 border border-black/10 backdrop-blur-[2px] bg-white/10 rounded-2xl shadow-[0_0_16px_rgba(0,0,0,0.1)] text-white">
         <div className="flex space-x-3 items-center">
           <div className="flex items-start flex-col">
@@ -420,28 +424,8 @@ export function InfiniteCanvas() {
               className="border-white/10 rounded-lg cursor-pointer size-8"
             />
           </div>
-          <button
-            className="p-2 cursor-pointer rounded-xl shadow-[0_0_6px_rgba(0,0,0,0.1)] font-bold border border-white/40 size-9 bg-white/20"
-            onClick={handleClear}
-          >
-            <img src="/clean.svg" className="size-full" alt="clear" />
-          </button>
-          <button
-            className="p-2 px-4 cursor-pointer rounded-xl shadow-[0_0_6px_rgba(0,0,0,0.1)] border border-white/40 text-white text-sm bg-white/20"
-            onClick={() => {
-              const confirmLoad = window.confirm(
-                "Это перерисует все и удалит все что было нарисовано",
-              );
-
-              if (confirmLoad) {
-                loadPointsFromJson(SCHEME_1_URL);
-              }
-            }}
-          >
-            Загрузить точки
-          </button>
           <div className="flex flex-col">
-            <p className="text-[10px] opacity-60">копии: {rangeValue}</p>
+            <p className="text-[10px] opacity-60 mb-4">копии: {rangeValue}</p>
             <input
               type="range"
               value={rangeValue}
