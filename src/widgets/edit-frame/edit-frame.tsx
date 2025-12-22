@@ -33,19 +33,44 @@ export function InfiniteCanvas() {
     return localStorage.getItem(BG_COLOR_STORAGE_KEY) || "#1a1a1a";
   });
 
+  const [steps, setSteps] = useState<PaintedCells[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+
   const [rangeValue, setRangeValue] = useState(1);
 
-  const [paintedCells, setPaintedCells] = useState<PaintedCells>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved) as PaintedCells;
+  const paintedCells = useMemo(() => {
+    if (steps.length === 0) return {};
+
+    const merged: PaintedCells = {};
+    for (let i = 0; i <= currentStepIndex; i++) {
+      if (steps[i]) {
+        Object.assign(merged, steps[i]);
       }
-    } catch (error) {
-      console.error("Ошибка при загрузке из Local Storage:", error);
     }
-    return {};
-  });
+    return merged;
+  }, [steps, currentStepIndex]);
+
+  const setPaintedCells = useCallback(
+    (updater: (prev: PaintedCells) => PaintedCells) => {
+      setSteps((prevSteps) => {
+        const currentFullState = {};
+        prevSteps
+          .slice(0, currentStepIndex + 1)
+          .forEach((s) => Object.assign(currentFullState, s));
+
+        const newState = updater(currentFullState);
+
+        const newSteps = [...prevSteps];
+        if (newSteps.length === 0) {
+          newSteps[0] = newState;
+        } else {
+          newSteps[currentStepIndex] = newState;
+        }
+        return newSteps;
+      });
+    },
+    [currentStepIndex],
+  );
 
   const [panOffset, setPanOffset] = useState<PanOffset>({ x: 0, y: 0 });
   const [color, setColor] = useState(() => {
@@ -90,35 +115,29 @@ export function InfiniteCanvas() {
     async (jsonUrl: string) => {
       try {
         const response = await fetch(jsonUrl);
+        if (!response.ok) throw new Error(`${response.status}`);
 
-        if (!response.ok) {
-          throw new Error(`${response.status}`);
-        }
+        const data = await response.json();
 
-        const initialPoints: PaintedCells =
-          (await response.json()) as PaintedCells;
-        let allPoints: PaintedCells = { ...initialPoints };
+        const incomingSteps = Array.isArray(data) ? data : [data];
 
-        const NUM_COPIES = rangeValue;
-        const SHIFT_AMOUNT = 4;
+        const processedSteps = incomingSteps.map((step) => {
+          const allPoints: PaintedCells = { ...step };
+          const NUM_COPIES = rangeValue;
+          const SHIFT_AMOUNT = 4;
 
-        for (let i = 0; i < NUM_COPIES; i++) {
-          const totalShift = SHIFT_AMOUNT * (i + 1);
-          const shiftedPoints: PaintedCells = {};
-
-          for (const key in initialPoints) {
-            if (Object.prototype.hasOwnProperty.call(initialPoints, key)) {
-              const [xStr, yStr] = key.split(",");
-              const x = Number(xStr);
-              const y = Number(yStr);
-              const newKey = `${x + totalShift},${y}`;
-              shiftedPoints[newKey] = initialPoints[key];
+          for (let i = 0; i < NUM_COPIES; i++) {
+            const totalShift = SHIFT_AMOUNT * (i + 1);
+            for (const key in step) {
+              const [x, y] = key.split(",").map(Number);
+              allPoints[`${x + totalShift},${y}`] = step[key];
             }
           }
+          return allPoints;
+        });
 
-          allPoints = { ...allPoints, ...shiftedPoints };
-        }
-        setPaintedCells(allPoints);
+        setSteps(processedSteps);
+        setCurrentStepIndex(0);
       } catch (error) {
         console.error(error);
       }
@@ -347,9 +366,24 @@ export function InfiniteCanvas() {
     };
   }, [zoomLevel, handleMouseUp]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (document.activeElement?.tagName === "INPUT") return;
+
+      if (event.key === "ArrowRight") {
+        setCurrentStepIndex((prev) => Math.min(steps.length - 1, prev + 1));
+      } else if (event.key === "ArrowLeft") {
+        setCurrentStepIndex((prev) => Math.max(0, prev - 1));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [steps.length]);
+
   const SCHEMES = [
     { id: "scheme1", name: "Схема 1", url: "/patterns/scheme1.json" },
-    { id: "scheme2", name: "Схема 2", url: "/patterns/scheme1.json" },
+    { id: "scheme2", name: "Схема 2", url: "/patterns/part-scheme1.json" },
     { id: "scheme3", name: "Схема 3", url: "/patterns/scheme1.json" },
     { id: "scheme4", name: "Схема 4", url: "/patterns/scheme1.json" },
     { id: "scheme5", name: "Схема 5", url: "/patterns/scheme1.json" },
@@ -378,6 +412,44 @@ export function InfiniteCanvas() {
         onMouseUp={handleMouseUp}
         onContextMenu={handleContextMenu}
       />
+      {steps.length > 1 && (
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-6 px-6 py-3 border border-white/10 backdrop-blur-md bg-black/20 rounded-2xl shadow-2xl text-white select-none">
+          <div className="flex flex-col items-center gap-1">
+            <button
+              className="text-2xl hover:scale-125 transition-transform disabled:opacity-20 disabled:hover:scale-100"
+              disabled={currentStepIndex === 0}
+              onClick={() => setCurrentStepIndex((prev) => prev - 1)}
+            >
+              ←
+            </button>
+            <span className="text-[8px] opacity-40">[Left]</span>
+          </div>
+
+          <div className="flex flex-col items-center min-w-20">
+            <p className="text-[10px] uppercase tracking-widest opacity-50 mb-1">
+              Этап
+            </p>
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl font-mono font-bold text-yellow-400">
+                {currentStepIndex + 1}
+              </span>
+              <span className="text-sm opacity-30">/</span>
+              <span className="text-sm opacity-50">{steps.length}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center gap-1">
+            <button
+              className="text-2xl hover:scale-125 transition-transform disabled:opacity-20 disabled:hover:scale-100"
+              disabled={currentStepIndex === steps.length - 1}
+              onClick={() => setCurrentStepIndex((prev) => prev + 1)}
+            >
+              →
+            </button>
+            <span className="text-[8px] opacity-40">[Right]</span>
+          </div>
+        </div>
+      )}
       <div className="absolute top-5 right-5 flex flex-col w-56 border border-black/10 backdrop-blur-[2px] bg-white/10 rounded-2xl shadow-[0_0_16px_rgba(0,0,0,0.1)] text-white overflow-hidden">
         <div className="p-3 border-b border-white/10 bg-white/5">
           <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest">
