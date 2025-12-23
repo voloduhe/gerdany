@@ -382,20 +382,20 @@ export function InfiniteCanvas() {
   }, [steps.length]);
 
   const SCHEMES = [
-    { id: "scheme1", name: "Схема 1", url: "gerdany/patterns/scheme1.json" },
+    { id: "scheme1", name: "Схема 1", url: "/patterns/scheme1.json" },
     {
       id: "scheme2",
       name: "Схема 2",
-      url: "gerdany/patterns/part-scheme1.json",
+      url: "/patterns/part-scheme1.json",
     },
-    { id: "scheme3", name: "Схема 3", url: "gerdany/patterns/scheme1.json" },
-    { id: "scheme4", name: "Схема 4", url: "gerdany/patterns/scheme1.json" },
-    { id: "scheme5", name: "Схема 5", url: "gerdany/patterns/scheme1.json" },
-    { id: "scheme63", name: "Схема 6", url: "gerdany/patterns/scheme1.json" },
-    { id: "scheme32", name: "Схема 3", url: "gerdany/patterns/scheme1.json" },
-    { id: "scheme45", name: "Схема 4", url: "gerdany/patterns/scheme1.json" },
-    { id: "scheme56", name: "Схема 5", url: "gerdany/patterns/scheme1.json" },
-    { id: "scheme67", name: "Схема 6", url: "gerdany/patterns/scheme1.json" },
+    { id: "scheme3", name: "Схема 3", url: "/patterns/scheme1.json" },
+    { id: "scheme4", name: "Схема 4", url: "/patterns/scheme1.json" },
+    { id: "scheme5", name: "Схема 5", url: "/patterns/scheme1.json" },
+    { id: "scheme63", name: "Схема 6", url: "/patterns/scheme1.json" },
+    { id: "scheme32", name: "Схема 3", url: "/patterns/scheme1.json" },
+    { id: "scheme45", name: "Схема 4", url: "/patterns/scheme1.json" },
+    { id: "scheme56", name: "Схема 5", url: "/patterns/scheme1.json" },
+    { id: "scheme67", name: "Схема 6", url: "/patterns/scheme1.json" },
   ];
 
   return (
